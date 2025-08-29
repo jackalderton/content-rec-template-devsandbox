@@ -1,8 +1,6 @@
 import io
 import re
 import json
-import csv
-import zipfile
 from datetime import datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -31,7 +29,8 @@ st.set_page_config(
 # =========================================================
 # CONSTANTS / SETTINGS
 # =========================================================
-ALWAYS_STRIP = {"style", "noscript", "template"}  # NOTE: don't include "script" here; we strip after schema extraction
+# NOTE: don't include "script" here; we extract JSON-LD schema before skipping scripts during body traversal
+ALWAYS_STRIP = {"style", "noscript", "template"}
 INLINE_TAGS = {"a","span","strong","em","b","i","u","s","small","sup","sub","mark","abbr","time","code","var","kbd"}
 DEFAULT_EXCLUDE = [
     "header", "footer", "nav",
@@ -169,7 +168,7 @@ def extract_schema_jsonld(soup: BeautifulSoup) -> list[str]:
     return lines
 
 # =========================================================
-# BODY EXTRACTION (with blank line before h2–h6)
+# BODY EXTRACTION (preserve blank lines, add blank before h2–h6)
 # =========================================================
 def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_img_src: bool = False) -> list[str]:
     """
@@ -185,7 +184,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
     lines: list[str] = []
 
     def emit_lines(tag_name: str, text: str):
-        # Insert a single blank line before sub-headings for readability
+        # Readability: blank line before sub-headings
         if tag_name in {"h2", "h3", "h4", "h5", "h6"}:
             if not lines or lines[-1] != "":
                 lines.append("")
@@ -214,7 +213,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
 
     def handle(tag: Tag):
         name = tag.name
-        if name in {"script", *ALWAYS_STRIP}:
+        if name in ALWAYS_STRIP or name == "script":
             return
 
         # Headings
@@ -338,7 +337,7 @@ def remove_before_first_h1_all_levels(body: Tag) -> None:
                 continue
 
 # =========================================================
-# DOCX HELPERS
+# DOCX HELPERS (includes headers/footers)
 # =========================================================
 def iter_paragraphs_and_tables(doc: Document):
     """
@@ -434,12 +433,14 @@ def build_docx(template_bytes: bytes, meta: dict, lines: list[str]) -> bytes:
         "[AGENCY]": meta.get("agency", ""),
         "[CLIENT NAME]": meta.get("client_name", ""),
     })
+    # Main content
     replace_placeholder_with_lines(doc, "[PAGE BODY CONTENT]", lines)
-    # Insert schema if placeholder exists
+    # Schema (optional placeholder)
     try:
         replace_placeholder_with_lines(doc, "[SCHEMA]", meta.get("schema_lines", []))
     except ValueError:
         pass
+
     out = io.BytesIO()
     doc.save(out)
     out.seek(0)
@@ -469,7 +470,7 @@ def process_url(
     final_url, html_bytes = fetch_html(url)
     soup = BeautifulSoup(html_bytes, "lxml")
 
-    # --- extract schema BEFORE removing <script> tags ---
+    # --- extract schema BEFORE ignoring <script> in body traversal ---
     schema_lines = extract_schema_jsonld(soup)
 
     # global strip for body processing (do NOT include 'script' here)
@@ -611,7 +612,7 @@ section[tabindex="0"] h1:first-of-type {
 )
 
 # =========================================================
-# APP UI
+# APP UI (Single URL only)
 # =========================================================
 st.title("Content Rec Template Generation Tool")
 
@@ -619,9 +620,6 @@ st.title("Content Rec Template Generation Tool")
 if "single_docx" not in st.session_state:
     st.session_state.single_docx = None
     st.session_state.single_docx_name = None
-if "batch_zip" not in st.session_state:
-    st.session_state.batch_zip = None
-    st.session_state.batch_zip_name = "content_recommendations.zip"
 
 with st.sidebar:
     st.header("Template & Options")
@@ -662,115 +660,62 @@ with st.sidebar:
 
     st.caption("Timezone fixed to Europe/London; dates in DD/MM/YYYY.")
 
-# --- Tabs ---
-tab1, tab2 = st.tabs(["Single URL", "Batch (CSV)"])
+# --- Single URL pane ---
+st.subheader("Single page")
 
-with tab1:
-    st.subheader("Single page")
+# Agency / Client fields just above the URL field
+col0a, col0b = st.columns([1, 1])
+with col0a:
+    agency_name = st.text_input("Agency Name", value="", placeholder="e.g., JA Consulting")
+with col0b:
+    client_name = st.text_input("Client Name", value="", placeholder="e.g., Workspace")
 
-    col0a, col0b = st.columns([1, 1])
-    with col0a:
-        agency_name = st.text_input("Agency Name", value="", placeholder="e.g., JA Consulting")
-    with col0b:
-        client_name = st.text_input("Client Name", value="", placeholder="e.g., Workspace")
+url = st.text_input("URL", value="https://www.example.com")
 
-    url = st.text_input("URL", value="https://www.example.com")
+col_a, col_b = st.columns([1, 1])
+with col_a:
+    do_preview = st.button("Extract preview")
+with col_b:
+    do_doc = st.button("Generate DOCX")
 
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        do_preview = st.button("Extract preview")
-    with col_b:
-        do_doc = st.button("Generate DOCX")
+if do_preview or do_doc:
+    if not tpl_file and do_doc:
+        st.error("Please upload your Rec Template.docx in the sidebar first.")
+    else:
+        try:
+            meta, lines = process_url(
+                url,
+                exclude_selectors,
+                annotate_links=annotate_links,
+                remove_before_h1=remove_before_h1,
+                include_img_src=include_img_src,
+            )
+            meta["agency"] = agency_name.strip()
+            meta["client_name"] = client_name.strip()
 
-    if do_preview or do_doc:
-        if not tpl_file and do_doc:
-            st.error("Please upload your Rec Template.docx in the sidebar first.")
-        else:
-            try:
-                meta, lines = process_url(
-                    url,
-                    exclude_selectors,
-                    annotate_links=annotate_links,
-                    remove_before_h1=remove_before_h1,
-                    include_img_src=include_img_src,
-                )
-                meta["agency"] = agency_name.strip()
-                meta["client_name"] = client_name.strip()
+            st.success("Extracted successfully.")
+            with st.expander("Meta (preview)", expanded=True):
+                st.write(meta)
+            with st.expander("Signposted content (preview)", expanded=False):
+                st.text("\n".join(lines))
+            with st.expander("Schema (preview)", expanded=False):
+                schema_preview = "\n".join(meta.get("schema_lines", [])) or "No JSON-LD schema found."
+                st.text(schema_preview)
 
-                st.success("Extracted successfully.")
-                with st.expander("Meta (preview)", expanded=True):
-                    st.write(meta)
-                with st.expander("Signposted content (preview)", expanded=False):
-                    st.text("\n".join(lines))
-                with st.expander("Schema (preview)", expanded=False):
-                    schema_preview = "\n".join(meta.get("schema_lines", [])) or "No JSON-LD schema found."
-                    st.text(schema_preview)
+            if do_doc:
+                out_bytes = build_docx(tpl_file.read(), meta, lines)
+                fname = safe_filename(f"{meta['page']} - Content Recommendations") + ".docx"
+                st.session_state.single_docx = out_bytes
+                st.session_state.single_docx_name = fname
+        except Exception as e:
+            st.exception(e)
 
-                if do_doc:
-                    out_bytes = build_docx(tpl_file.read(), meta, lines)
-                    fname = safe_filename(f"{meta['page']} - Content Recommendations") + ".docx"
-                    st.session_state.single_docx = out_bytes
-                    st.session_state.single_docx_name = fname
-            except Exception as e:
-                st.exception(e)
-
-    if st.session_state.single_docx:
-        st.download_button(
-            "Download DOCX",
-            data=st.session_state.single_docx,
-            file_name=st.session_state.single_docx_name,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="dl_single_docx",
-        )
-
-with tab2:
-    st.subheader("Batch process CSV")
-    st.caption("Upload a CSV with a header row; required column: url. Optional: out_name.")
-    batch_file = st.file_uploader("CSV file", type=["csv"], key="csv")
-    if st.button("Run batch"):
-        if not tpl_file:
-            st.error("Please upload your Rec Template.docx in the sidebar first.")
-        elif not batch_file:
-            st.error("Please upload a CSV.")
-        else:
-            tpl_bytes = tpl_file.read()
-            rows = list(csv.DictReader(io.StringIO(batch_file.getvalue().decode("utf-8"))))
-            if not rows:
-                st.error("CSV appears empty.")
-            elif "url" not in rows[0]:
-                st.error("CSV must include a 'url' column.")
-            else:
-                memzip = io.BytesIO()
-                zf = zipfile.ZipFile(memzip, "w", zipfile.ZIP_DEFLATED)
-                results = []
-                for i, row in enumerate(rows, 1):
-                    u = row["url"].strip()
-                    try:
-                        meta, lines = process_url(
-                            u,
-                            exclude_selectors,
-                            annotate_links=annotate_links,
-                            remove_before_h1=remove_before_h1,
-                            include_img_src=include_img_src,
-                        )
-                        out_name_raw = (row.get("out_name") or f"{meta['page']} - Content Recommendations").strip()
-                        out_name = safe_filename(out_name_raw)
-                        out_bytes = build_docx(tpl_bytes, meta, lines)
-                        zf.writestr(f"{out_name}.docx", out_bytes)
-                        results.append({"url": u, "status": "ok", "file": f"{out_name}.docx"})
-                    except Exception as e:
-                        results.append({"url": u, "status": f"error: {e}", "file": ""})
-                zf.close()
-                memzip.seek(0)
-                st.success("Batch complete.")
-                st.dataframe(results)
-                st.session_state.batch_zip = memzip.read()
-
-    if st.session_state.batch_zip:
-        st.download_button(
-            "Download ZIP",
-            data=st.session_state.batch_zip,
-            file_name=st.session_state.batch_zip_name,
-            mime="application/zip",
-            key="dl_batch_zip",
-        )
+# render download button if we have a generated file
+if st.session_state.single_docx:
+    st.download_button(
+        "Download DOCX",
+        data=st.session_state.single_docx,
+        file_name=st.session_state.single_docx_name,
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        key="dl_single_docx",
+    )
