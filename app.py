@@ -141,22 +141,22 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
       - <h1> … <h6> lines
       - <p> lines
       - <img alt="…"> (or <img alt="…" src="…"> when enabled) for every <img> encountered
+    Blank lines are preserved as empty strings (no '<p>' inserted).
     """
     lines: list[str] = []
 
     def emit_lines(tag_name: str, text: str):
-    text = normalise_keep_newlines(text)
-    segments = text.split("\n")
-    for seg in segments:
-        seg_stripped = seg.strip()
-        if seg_stripped:
-            # keep the tag prefix for real content lines
-            if tag_name == "p" and is_noise(seg_stripped):
-                continue
-            lines.append(f"<{tag_name}> {seg_stripped}")
-        else:
-            # preserve a visual blank line WITHOUT adding <p>
-            lines.append("")
+        text = normalise_keep_newlines(text)
+        segments = text.split("\n")
+        for seg in segments:
+            seg_stripped = seg.strip()
+            if seg_stripped:
+                if tag_name == "p" and is_noise(seg_stripped):
+                    continue
+                lines.append(f"<{tag_name}> {seg_stripped}")
+            else:
+                # preserve a blank line WITHOUT adding a <p>
+                lines.append("")
 
     def emit_img(img_tag: Tag):
         if not isinstance(img_tag, Tag) or img_tag.name != "img":
@@ -235,6 +235,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                     handle(child)
         flush_buf()
 
+    # Walk the body
     for child in body.children:
         if isinstance(child, (Comment, Doctype, ProcessingInstruction)):
             continue
@@ -242,23 +243,24 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
             raw = normalise_keep_newlines(str(child))
             if raw.strip() and not is_noise(raw):
                 emit_lines("p", raw)
+            elif raw == "\n":
+                lines.append("")
         elif isinstance(child, Tag):
             if child.name == "img":
                 emit_img(child)
             else:
                 handle(child)
 
-    # Deduplicate trivial adjacent repeats
+    # Deduplicate trivial adjacent repeats but KEEP blank lines
     deduped, prev = [], None
-for ln in lines:
-    if ln == "":
-        # never dedupe away blank lines; keep them as-is
-        deduped.append(ln)
-        continue
-    if ln != prev:
-        deduped.append(ln)
-    prev = ln
-return deduped
+    for ln in lines:
+        if ln == "":
+            deduped.append(ln)
+            continue
+        if ln != prev:
+            deduped.append(ln)
+        prev = ln
+    return deduped
 
 def remove_before_first_h1_all_levels(body: Tag) -> None:
     """
@@ -542,9 +544,6 @@ if "batch_zip" not in st.session_state:
     st.session_state.batch_zip_name = "content_recommendations.zip"
 
 with st.sidebar:
-    if not icon_path:
-        st.warning("Favicon not found (looked in assets/JAFavicon.png and JAFavicon.png).")
-
     st.header("Template & Options")
     tpl_file = st.file_uploader("Upload Template as .DOCX file", type=["docx"])
     st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
@@ -579,7 +578,7 @@ with st.sidebar:
 
     remove_before_h1 = st.toggle("Delete everything before first <h1>", value=False)
 
-    include_img_src = st.toggle("Include <img> src in output", value=False, key="include_img_src")
+    include_img_src = st.toggle("Include <img> src in output", value=False)
 
     st.caption("Timezone fixed to Europe/London; dates in DD/MM/YYYY.")
 
