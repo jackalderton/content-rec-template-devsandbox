@@ -571,14 +571,14 @@ with st.sidebar:
     tpl_file = st.file_uploader("Upload Template as .DOCX file", type=["docx"])
     st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
 
-   st.divider()
-st.subheader("Need a template?")
+st.divider()
+    st.subheader("Need a template?")
 
-from pathlib import Path
-APP_DIR = Path(__file__).resolve().parent
-TEMPLATE_CANDIDATES = [
-    APP_DIR / "assets" / "blank_template.docx",
-    APP_DIR / "blank_template.docx",
+    from pathlib import Path
+    APP_DIR = Path(__file__).resolve().parent
+    TEMPLATE_CANDIDATES = [
+        APP_DIR / "assets" / "blank_template.docx",
+        APP_DIR / "blank_template.docx",
 ]
 
 template_path = next((p for p in TEMPLATE_CANDIDATES if p.exists()), None)
