@@ -25,18 +25,19 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
 
-/* Apply Montserrat everywhere EXCEPT icon ligature classes */
-html, body, [data-testid="stAppViewContainer"] *:not(.material-icons):not(.material-icons-outlined):not(.material-symbols-outlined):not(.material-symbols-rounded):not(.material-symbols-sharp) {
-  font-family: 'Montserrat', sans-serif;
-}
+/* Global font */
+html, body, [data-testid="stAppViewContainer"] * { font-family: 'Montserrat', sans-serif; }
 
-/* Restore icon fonts so ligatures render as icons (prevents literal 'keyboard_arrow_down') */
+/* Restore icon fonts so 'keyboard_arrow_down' renders as an icon */
 .material-icons,
 .material-icons-outlined,
 .material-symbols-outlined,
 .material-symbols-rounded,
 .material-symbols-sharp {
   font-family: 'Material Icons','Material Icons Outlined','Material Symbols Outlined','Material Symbols Rounded','Material Symbols Sharp' !important;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
   font-weight: normal;
   font-style: normal;
   line-height: 1;
@@ -46,24 +47,6 @@ html, body, [data-testid="stAppViewContainer"] *:not(.material-icons):not(.mater
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
-  -webkit-font-feature-settings: 'liga';
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Optional fallback: if icon fonts still fail, hide ligature text in expander header */
-[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons:not(:empty),
-[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons-outlined:not(:empty),
-[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-symbols-outlined:not(:empty) {
-  text-indent: 0;      /* normal when fonts load */
-}
-@supports not (font-variation-settings: normal) {
-  /* crude safety net on very locked-down envs */
-  [data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons:not(:empty) {
-    text-indent: -9999px;
-    overflow: hidden;
-    width: 1em;
-    display: inline-block;
-  }
 }
 
 /* Main title: target first H1 robustly */
