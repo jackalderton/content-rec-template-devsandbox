@@ -639,8 +639,8 @@ with st.sidebar:
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
     else:
-        st.info("Place your template at assets/blank_template.docx (preferred) or alongside app.py as blank_template.docx to enable this download.")
-    st.caption("Once downloaded, you'll still need to upload this above, but this version is a decent starting point.")
+        st.info("There's a dev issue here. Drop Jack a message and tell him that he's handsome, but also that he needs to upload the template to /assets/. Definitely lead with the whole 'handsome' thing though.")
+    st.caption("Once downloaded, you'll still need to upload your template above.")
 
     st.divider()
     st.subheader("Exclude Selectors")
@@ -651,7 +651,7 @@ with st.sidebar:
     )
     exclude_selectors = [s.strip() for s in exclude_txt.split(",") if s.strip()]
 
-    st.subheader("Link formatting")
+    st.subheader("Extra Settings")
     annotate_links = st.toggle("Append (→ URL) after anchor text", value=False)
 
     remove_before_h1 = st.toggle("Delete everything before first <h1>", value=False)
@@ -661,16 +661,16 @@ with st.sidebar:
     st.caption("Timezone fixed to Europe/London; dates in DD/MM/YYYY.")
 
 # --- Single URL pane ---
-st.subheader("Single page")
+st.subheader("Page Details")
 
 # Agency / Client fields just above the URL field
 col0a, col0b = st.columns([1, 1])
 with col0a:
-    agency_name = st.text_input("Agency Name", value="", placeholder="e.g., JA Consulting")
+    client_name = st.text_input("Client Name", value="", placeholder="Clienty McClientface")
 with col0b:
-    client_name = st.text_input("Client Name", value="", placeholder="e.g., Workspace")
+    agency_name = st.text_input("Agency/Practitioner Name", value="", placeholder="Practitionery McPractitionerface")
 
-url = st.text_input("URL", value="https://www.example.com")
+url = st.text_input("URL", value="" placeholder="www.example.com")
 
 col_a, col_b = st.columns([1, 1])
 with col_a:
@@ -680,7 +680,7 @@ with col_b:
 
 if do_preview or do_doc:
     if not tpl_file and do_doc:
-        st.error("Please upload your Rec Template.docx in the sidebar first.")
+        st.error("Aaaaaah!!! Something went wrong! Panic! - oh wait, it's fine - you just forgot to upload the template file. Read the stuff on the left if you're stuck :)")
     else:
         try:
             meta, lines = process_url(
