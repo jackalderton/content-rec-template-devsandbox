@@ -103,12 +103,6 @@ section[tabindex="0"] h1:first-of-type {
   box-shadow: inset 0 -3px 0 0 #4A90E2;
 }
 
-/* Inputs */
-.stTextInput > div > div > input, .stTextArea textarea {
-  background-color: #f5f7fb;
-  border-radius: 8px;
-}
-
 /* File uploader panel */
 [data-testid="stFileUploader"] > div {
   background: #232730;
