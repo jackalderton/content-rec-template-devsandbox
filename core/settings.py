@@ -50,7 +50,22 @@ SIDEBAR_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
 
 /* Global font */
-html, body, [data-testid="stAppViewContainer"] * { font-family: 'Montserrat', sans-serif; }
+html, body, [data-testid="stAppViewContainer"] *:not(.material-icons):not(.material-icons-outlined):not(.material-symbols-outlined):not(.material-symbols-rounded):not(.material-symbols-sharp) {
+  font-family: 'Montserrat', sans-serif;
+}
+/* Restore icon fonts so ligatures render as icons */
+.material-icons,
+.material-icons-outlined,
+.material-symbols-outlined,
+.material-symbols-rounded,
+.material-symbols-sharp {
+  font-family: 'Material Icons','Material Icons Outlined','Material Symbols Outlined','Material Symbols Rounded','Material Symbols Sharp' !important;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
 
 /* Main title: target first H1 robustly */
 section[tabindex="0"] h1:first-of-type {
