@@ -670,7 +670,7 @@ with col0a:
 with col0b:
     agency_name = st.text_input("Agency/Practitioner Name", value="", placeholder="Practitionery McPractitionerface")
 
-url = st.text_input("URL", value="" placeholder="www.example.com")
+url = st.text_input("URL", value="", placeholder="www.example.com")
 
 col_a, col_b = st.columns([1, 1])
 with col_a:
