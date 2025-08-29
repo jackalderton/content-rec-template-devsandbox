@@ -145,17 +145,18 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
     lines: list[str] = []
 
     def emit_lines(tag_name: str, text: str):
-        text = normalise_keep_newlines(text)
-        segments = text.split("\n")
-        for seg in segments:
-            seg_stripped = seg.strip()
-            if seg_stripped:
-                if tag_name == "p" and is_noise(seg_stripped):
-                    continue
-                lines.append(f"<{tag_name}> {seg_stripped}")
-            else:
-                if tag_name == "p":
-                    lines.append("<p>")
+    text = normalise_keep_newlines(text)
+    segments = text.split("\n")
+    for seg in segments:
+        seg_stripped = seg.strip()
+        if seg_stripped:
+            # keep the tag prefix for real content lines
+            if tag_name == "p" and is_noise(seg_stripped):
+                continue
+            lines.append(f"<{tag_name}> {seg_stripped}")
+        else:
+            # preserve a visual blank line WITHOUT adding <p>
+            lines.append("")
 
     def emit_img(img_tag: Tag):
         if not isinstance(img_tag, Tag) or img_tag.name != "img":
@@ -249,11 +250,15 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
 
     # Deduplicate trivial adjacent repeats
     deduped, prev = [], None
-    for ln in lines:
-        if ln != prev:
-            deduped.append(ln)
-        prev = ln
-    return deduped
+for ln in lines:
+    if ln == "":
+        # never dedupe away blank lines; keep them as-is
+        deduped.append(ln)
+        continue
+    if ln != prev:
+        deduped.append(ln)
+    prev = ln
+return deduped
 
 def remove_before_first_h1_all_levels(body: Tag) -> None:
     """
