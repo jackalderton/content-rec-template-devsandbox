@@ -20,7 +20,122 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+
+/* Apply Montserrat everywhere EXCEPT icon ligature classes */
+html, body, [data-testid="stAppViewContainer"] *:not(.material-icons):not(.material-icons-outlined):not(.material-symbols-outlined):not(.material-symbols-rounded):not(.material-symbols-sharp) {
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Restore icon fonts so ligatures render as icons (prevents literal 'keyboard_arrow_down') */
+.material-icons,
+.material-icons-outlined,
+.material-symbols-outlined,
+.material-symbols-rounded,
+.material-symbols-sharp {
+  font-family: 'Material Icons','Material Icons Outlined','Material Symbols Outlined','Material Symbols Rounded','Material Symbols Sharp' !important;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Optional fallback: if icon fonts still fail, hide ligature text in expander header */
+[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons:not(:empty),
+[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons-outlined:not(:empty),
+[data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-symbols-outlined:not(:empty) {
+  text-indent: 0;      /* normal when fonts load */
+}
+@supports not (font-variation-settings: normal) {
+  /* crude safety net on very locked-down envs */
+  [data-testid="stExpander"] [data-testid="stExpanderHeader"] .material-icons:not(:empty) {
+    text-indent: -9999px;
+    overflow: hidden;
+    width: 1em;
+    display: inline-block;
+  }
+}
+
+/* Main title: target first H1 robustly */
+section[tabindex="0"] h1:first-of-type {
+  text-align: center;
+  color: #4A90E2;
+  font-size: 3em;
+  padding-bottom: .5em;
+  border-bottom: 2px solid #4A90E2;
+}
+
+/* Sidebar look + width */
+[data-testid="stSidebar"] {
+  background-color: #1a1e24;
+  border-right: 1px solid #4A90E2;
+  min-width: 320px;
+  max-width: 420px;
+}
+
+/* Expander headers */
+[data-testid="stExpander"] [data-testid="stExpanderHeader"] {
+  background-color: #363945;
+  border-radius: 8px;
+  padding: 10px 15px;
+  margin-bottom: 10px;
+  border: none;
+  font-weight: bold;
+  color: #E0E0E0;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+/* Buttons */
+.stButton > button {
+  width: 100%;
+  background-color: #323640;
+  color: #E0E0E0;
+  border: 1px solid #4A90E2;
+  border-radius: 8px;
+  padding: 10px;
+  transition: background-color .3s, color .3s;
+}
+.stButton > button:hover {
+  background-color: #4A90E2;
+  color: #fff;
+  border-color: #fff;
+}
+
+/* Tabs */
+[data-testid="stTabs"] button[role="tab"] { background-color: #323640; color: #E0E0E0; }
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+  color: #4A90E2;
+  box-shadow: inset 0 -3px 0 0 #4A90E2;
+}
+
+/* Inputs */
+.stTextInput > div > div > input, .stTextArea textarea {
+  background-color: #f5f7fb;
+  border-radius: 8px;
+}
+
+/* File uploader panel */
+[data-testid="stFileUploader"] > div {
+  background: #232730;
+  border: 1px dashed #4A90E2;
+  border-radius: 10px;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 st.title("Content Rec Template Generation Tool")
 
 # session state for stable downloads across reruns
