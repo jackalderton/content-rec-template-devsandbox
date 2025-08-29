@@ -341,6 +341,11 @@ def remove_before_first_h1_all_levels(body: Tag) -> None:
 # DOCX HELPERS
 # =========================================================
 def iter_paragraphs_and_tables(doc: Document):
+    """
+    Yield every paragraph in the document body and in all headers/footers
+    (including first/even-page variants), plus paragraphs inside tables.
+    """
+    # Body
     for p in doc.paragraphs:
         yield p
     for tbl in doc.tables:
@@ -348,6 +353,28 @@ def iter_paragraphs_and_tables(doc: Document):
             for cell in row.cells:
                 for p in cell.paragraphs:
                     yield p
+
+    # All sections' headers/footers
+    for sec in doc.sections:
+        headers = [
+            getattr(sec, "header", None),
+            getattr(sec, "first_page_header", None),
+            getattr(sec, "even_page_header", None),
+        ]
+        footers = [
+            getattr(sec, "footer", None),
+            getattr(sec, "first_page_footer", None),
+            getattr(sec, "even_page_footer", None),
+        ]
+
+        for part in [h for h in headers if h] + [f for f in footers if f]:
+            for p in part.paragraphs:
+                yield p
+            for tbl in part.tables:
+                for row in tbl.rows:
+                    for cell in row.cells:
+                        for p in cell.paragraphs:
+                            yield p
 
 def replace_placeholders_safe(doc: Document, mapping: dict[str, str]):
     keys = sorted(mapping.keys(), key=len, reverse=True)
