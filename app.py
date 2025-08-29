@@ -103,6 +103,11 @@ section[tabindex="0"] h1:first-of-type {
   box-shadow: inset 0 -3px 0 0 #4A90E2;
 }
 
+/* Remove overlap on feature titles */
+[data-testid="stIconMaterial"] { 
+  display: none !important; 
+}
+
 /* File uploader panel */
 [data-testid="stFileUploader"] > div {
   background: #232730;
