@@ -14,9 +14,22 @@ from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.oxml import OxmlElement
 
-# -------------------------
-# CONFIG / CONSTANTS
-# -------------------------
+# =========================================================
+# PAGE CONFIG — MUST be the first Streamlit call
+# =========================================================
+APP_DIR = Path(__file__).resolve().parent
+ICON_CANDIDATES = [APP_DIR / "assets" / "JAFavicon.png", APP_DIR / "JAFavicon.png"]
+icon_path = next((p for p in ICON_CANDIDATES if p.exists()), None)
+
+st.set_page_config(
+    page_title="Content Rec Template Tool",
+    page_icon=str(icon_path) if icon_path else "🧩",
+    layout="wide",
+)
+
+# =========================================================
+# CONSTANTS / SETTINGS
+# =========================================================
 ALWAYS_STRIP = {"script", "style", "noscript", "template"}
 INLINE_TAGS = {"a","span","strong","em","b","i","u","s","small","sup","sub","mark","abbr","time","code","var","kbd"}
 DEFAULT_EXCLUDE = [
@@ -55,31 +68,9 @@ NOISE_SUBSTRINGS = (
     "place this code immediately before the closing",
 )
 
-# -------------------------
-# UTILITIES
-# -------------------------
-
-from pathlib import Path
-import streamlit as st
-
-# ---- Page config MUST be the first Streamlit call ----
-APP_DIR = Path(__file__).resolve().parent
-ICON_CANDIDATES = [
-    APP_DIR / "assets" / "JAFavicon.png",
-    APP_DIR / "JAFavicon.png",
-]
-
-icon_path = next((p for p in ICON_CANDIDATES if p.exists()), None)
-
-st.set_page_config(
-    page_title="Content Rec Template Tool",
-    page_icon=str(icon_path) if icon_path else "🧩",
-    layout="wide",
-)
-
-if not icon_path:
-    st.sidebar.warning("Favicon not found (looked in assets/JAFavicon.png and JAFavicon.png).")
-
+# =========================================================
+# UTILS
+# =========================================================
 def uk_today_str() -> str:
     return datetime.now(ZoneInfo(DATE_TZ)).strftime(DATE_FMT)
 
@@ -125,7 +116,7 @@ def annotate_anchor_text(a: Tag, annotate_links: bool) -> str:
     return f"{text} (→ {href})" if (annotate_links and href) else text
 
 def extract_text_preserve_breaks(node: Tag | NavigableString, annotate_links: bool) -> str:
-    """Extract visible text; convert <br> to \n; handle anchors as one unit."""
+    """Extract visible text; convert <br> to \\n; handle anchors as one unit."""
     if isinstance(node, NavigableString):
         return str(node)
     parts = []
@@ -141,18 +132,15 @@ def extract_text_preserve_breaks(node: Tag | NavigableString, annotate_links: bo
                 parts.append(extract_text_preserve_breaks(child, annotate_links))
     return "".join(parts)
 
+# =========================================================
+# EXTRACTION
+# =========================================================
 def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_img_src: bool = False) -> list[str]:
     """
     Emit ONLY:
       - <h1> … <h6> lines
       - <p> lines
       - <img alt="…"> (or <img alt="…" src="…"> when enabled) for every <img> encountered
-
-    Lists are flattened to <p>. Critically, <p> is split on <br> and blank lines preserved
-    (blank <p> emitted as '<p>' with no text).
-
-    Additionally, capture stray text nodes (bare text in containers) as <p>, but skip
-    comments/doctype/processing instructions and obvious UI/analytics noise.
     """
     lines: list[str] = []
 
@@ -267,15 +255,11 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
         prev = ln
     return deduped
 
-# -------------------------
-# FIX: remove everything before first <h1> (all ancestor levels)
-# -------------------------
-
 def remove_before_first_h1_all_levels(body: Tag) -> None:
     """
     Remove *all* nodes that appear before the first <h1> in document order.
-    Walks the ancestor chain from <body> down to <h1>; at each level
-    removes previous siblings of the node on the path to the <h1>.
+    Walk the ancestor chain from <body> down to <h1>; at each level
+    remove previous siblings of the node on the path to the <h1>.
     """
     if body is None:
         return
@@ -301,10 +285,9 @@ def remove_before_first_h1_all_levels(body: Tag) -> None:
             except Exception:
                 continue
 
-# -------------------------
-# DOCX helpers
-# -------------------------
-
+# =========================================================
+# DOCX HELPERS
+# =========================================================
 def iter_paragraphs_and_tables(doc: Document):
     for p in doc.paragraphs:
         yield p
@@ -378,10 +361,9 @@ def build_docx(template_bytes: bytes, meta: dict, lines: list[str]) -> bytes:
     out.seek(0)
     return out.read()
 
-# -------------------------
+# =========================================================
 # CORE PROCESS
-# -------------------------
-
+# =========================================================
 def first_h1_text(soup: BeautifulSoup) -> str | None:
     if not soup.body:
         return None
@@ -403,7 +385,7 @@ def process_url(
     final_url, html_bytes = fetch_html(url)
     soup = BeautifulSoup(html_bytes, "lxml")
 
-    # global strip (script/style/noscript/template)
+    # global strip
     for el in soup.find_all(list(ALWAYS_STRIP)):
         el.decompose()
 
@@ -417,14 +399,13 @@ def process_url(
         except Exception:
             pass
 
-    # hard-kill: ensure any element with all three classes is removed even if selector order changes
+    # hard-kill certain containers
     try:
         for el in body.find_all(lambda t: isinstance(t, Tag) and t.has_attr('class') and {'sr-main','js-searchpage-content','visible'}.issubset(set(t.get('class', [])))):
             el.decompose()
     except Exception:
         pass
 
-    # Also explicitly remove via robust CSS selectors (belt-and-braces)
     for sel in [
         '.sr-main.js-searchpage-content.visible',
         "[class~='sr-main'][class~='js-searchpage-content'][class~='visible']",
@@ -438,11 +419,11 @@ def process_url(
         except Exception:
             pass
 
-    # If requested, remove everything before the first <h1> (robust across ancestor levels)
+    # robust remove-before-h1
     if remove_before_h1:
         remove_before_first_h1_all_levels(body)
 
-    # extract signposted lines
+    # extract lines
     lines = extract_signposted_lines_from_body(body, annotate_links=annotate_links, include_img_src=include_img_src)
 
     # meta
@@ -451,7 +432,6 @@ def process_url(
     meta_el = head.find("meta", attrs={"name": "description"}) if head else None
     description = meta_el.get("content").strip() if (meta_el and meta_el.get("content")) else "N/A"
 
-    # page name: prefer H1
     page_name = first_h1_text(soup) or fallback_page_name_from_url(final_url)
 
     meta = {
@@ -465,31 +445,18 @@ def process_url(
     }
     return meta, lines
 
-# -------------------------
+# =========================================================
 # FILENAME SAFETY
-# -------------------------
-
+# =========================================================
 def safe_filename(name: str, maxlen: int = 120) -> str:
-    # collapse any whitespace/newlines to single spaces
     name = re.sub(r"\s+", " ", name)
-    # remove characters that break downloads
     name = re.sub(r'[\\/*?:"<>|]+', "", name)
-    # commas are legal but can confuse some agents – make safer
     name = name.replace(",", "")
-    # trim length and trailing dots/spaces
     return (name[:maxlen]).rstrip(". ")
 
-# -------------------------
-# STREAMLIT APP
-# -------------------------
-
-icon_path = "JAFavicon.png"
-st.set_page_config(
-    page_title="Content Rec Template Tool",
-    page_icon=icon_path if Path(icon_path).exists() else None,
-    layout="wide",
-)
-
+# =========================================================
+# STYLES
+# =========================================================
 st.markdown(
     """
 <style>
@@ -556,9 +523,12 @@ section[tabindex="0"] h1:first-of-type {
     unsafe_allow_html=True,
 )
 
+# =========================================================
+# APP UI
+# =========================================================
 st.title("Content Rec Template Generation Tool")
 
-# session state for stable downloads across reruns
+# stable downloads across reruns
 if "single_docx" not in st.session_state:
     st.session_state.single_docx = None
     st.session_state.single_docx_name = None
@@ -567,36 +537,30 @@ if "batch_zip" not in st.session_state:
     st.session_state.batch_zip_name = "content_recommendations.zip"
 
 with st.sidebar:
+    if not icon_path:
+        st.warning("Favicon not found (looked in assets/JAFavicon.png and JAFavicon.png).")
+
     st.header("Template & Options")
     tpl_file = st.file_uploader("Upload Template as .DOCX file", type=["docx"])
     st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
 
-st.divider()
-st.subheader("Need a template?")
+    st.divider()
+    st.subheader("Need a template?")
+    TEMPLATE_CANDIDATES = [APP_DIR / "assets" / "blank_template.docx", APP_DIR / "blank_template.docx"]
+    template_path = next((p for p in TEMPLATE_CANDIDATES if p.exists()), None)
+    if template_path:
+        with open(template_path, "rb") as file:
+            st.download_button(
+                label="Download a Blank Template",
+                data=file,
+                file_name="blank_template.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+    else:
+        st.info("Place your template at assets/blank_template.docx (preferred) or alongside app.py as blank_template.docx to enable this download.")
+    st.caption("Once downloaded, you'll still need to upload this above, but this version is a decent starting point.")
 
-APP_DIR = Path(__file__).resolve().parent
-TEMPLATE_CANDIDATES = [
-    APP_DIR / "assets" / "blank_template.docx",
-    APP_DIR / "blank_template.docx",
-]
-template_path = next((p for p in TEMPLATE_CANDIDATES if p.exists()), None)
-
-if template_path:
-    with open(template_path, "rb") as file:
-        st.download_button(
-            label="Download a Blank Template",
-            data=file,
-            file_name="blank_template.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-else:
-    st.info(
-        "Place your template at assets/blank_template.docx (preferred) "
-        "or alongside app.py as blank_template.docx to enable this download."
-    )
-
-st.caption("Once downloaded, you'll still need to upload this above, but this version is a decent starting point.")
-st.divider()
+    st.divider()
     st.subheader("Exclude Selectors")
     exclude_txt = st.text_area(
         "Comma-separated CSS selectors to remove from <body>",
@@ -608,11 +572,9 @@ st.divider()
     st.subheader("Link formatting")
     annotate_links = st.toggle("Append (→ URL) after anchor text", value=False)
 
-    # Toggle instead of checkbox for consistency with Link formatting
     remove_before_h1 = st.toggle("Delete everything before first <h1>", value=False)
 
-    # Include <img> src alongside alt text
-    include_img_src = st.toggle("Include <img> src in output", value=False)
+    include_img_src = st.toggle("Include <img> src in output", value=False, key="include_img_src")
 
     st.caption("Timezone fixed to Europe/London; dates in DD/MM/YYYY.")
 
@@ -622,7 +584,6 @@ tab1, tab2 = st.tabs(["Single URL", "Batch (CSV)"])
 with tab1:
     st.subheader("Single page")
 
-    # Agency / Client fields just above the URL field
     col0a, col0b = st.columns([1, 1])
     with col0a:
         agency_name = st.text_input("Agency Name", value="", placeholder="e.g., JA Consulting")
@@ -649,7 +610,6 @@ with tab1:
                     remove_before_h1=remove_before_h1,
                     include_img_src=include_img_src,
                 )
-                # Inject Agency/Client into meta for downstream use
                 meta["agency"] = agency_name.strip()
                 meta["client_name"] = client_name.strip()
 
@@ -662,13 +622,11 @@ with tab1:
                 if do_doc:
                     out_bytes = build_docx(tpl_file.read(), meta, lines)
                     fname = safe_filename(f"{meta['page']} - Content Recommendations") + ".docx"
-                    # store for stable download across reruns
                     st.session_state.single_docx = out_bytes
                     st.session_state.single_docx_name = fname
             except Exception as e:
                 st.exception(e)
 
-    # render download button if we have a generated file
     if st.session_state.single_docx:
         st.download_button(
             "Download DOCX",
@@ -719,11 +677,8 @@ with tab2:
                 memzip.seek(0)
                 st.success("Batch complete.")
                 st.dataframe(results)
-
-                # store for stable download across reruns
                 st.session_state.batch_zip = memzip.read()
 
-    # render batch download if available
     if st.session_state.batch_zip:
         st.download_button(
             "Download ZIP",
