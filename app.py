@@ -1,5 +1,6 @@
 import io
 import re
+import json
 import csv
 import zipfile
 from datetime import datetime
@@ -43,12 +44,10 @@ DEFAULT_EXCLUDE = [
     "[class*='feefo']",
     "[class*='associated-blogs']",
     "[class*='popular']",
-    # Explore/SPA results containers and variants
     ".sr-main.js-searchpage-content.visible",
     "[class~='sr-main'][class~='js-searchpage-content'][class~='visible']",
     "[class*='js-searchpage-content']",
     "[class*='searchpage-content']",
-    # Map modal container to exclude
     ".lmd-map-modal-create.js-lmd-map-modal-map",
 ]
 DATE_TZ = "Europe/London"
@@ -133,7 +132,46 @@ def extract_text_preserve_breaks(node: Tag | NavigableString, annotate_links: bo
     return "".join(parts)
 
 # =========================================================
-# EXTRACTION
+# SCHEMA (JSON-LD) EXTRACTION
+# =========================================================
+def extract_schema_jsonld(soup: BeautifulSoup) -> list[str]:
+    """
+    Collects all <script type="application/ld+json"> (any casing, supports variations like 'application/ld+json; charset=utf-8').
+    Pretty-prints valid JSON; falls back to raw if parsing fails.
+    Returns a flat list of lines (for replace_placeholder_with_lines).
+    """
+    blocks: list[str] = []
+
+    def is_ldjson(tag: Tag) -> bool:
+        if not isinstance(tag, Tag) or tag.name != "script":
+            return False
+        t = (tag.get("type") or "").lower()
+        return "ld+json" in t  # catches 'application/ld+json' and variants
+
+    for sc in soup.find_all(is_ldjson):
+        # Prefer .string; fall back to get_text() to catch cases with comments/whitespace
+        raw = (sc.string or sc.get_text() or "").strip()
+        if not raw:
+            continue
+        # Some sites wrap multiple JSON-LD objects back-to-back or in arrays
+        # Try strict parse; if fails, keep raw
+        try:
+            parsed = json.loads(raw)
+            pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+            blocks.append(pretty)
+        except Exception:
+            blocks.append(raw)
+
+    # Flatten with blank line separators
+    lines: list[str] = []
+    for i, block in enumerate(blocks):
+        if i > 0:
+            lines.append("")  # spacer between blocks
+        lines.extend(block.splitlines())
+    return lines
+
+# =========================================================
+# BODY EXTRACTION (with blank line before h2–h6)
 # =========================================================
 def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_img_src: bool = False) -> list[str]:
     """
@@ -141,11 +179,19 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
       - <h1> … <h6> lines
       - <p> lines
       - <img alt="…"> (or <img alt="…" src="…"> when enabled) for every <img> encountered
-    Blank lines are preserved as empty strings (no '<p>' inserted).
+
+    Also:
+      - Preserves blank lines as empty strings (no '<p>').
+      - Inserts a blank line before each <h2>–<h6> to improve visual structure.
     """
     lines: list[str] = []
 
     def emit_lines(tag_name: str, text: str):
+        # Insert a single blank line before sub-headings for readability
+        if tag_name in {"h2", "h3", "h4", "h5", "h6"}:
+            if not lines or lines[-1] != "":
+                lines.append("")
+
         text = normalise_keep_newlines(text)
         segments = text.split("\n")
         for seg in segments:
@@ -155,8 +201,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                     continue
                 lines.append(f"<{tag_name}> {seg_stripped}")
             else:
-                # preserve a blank line WITHOUT adding a <p>
-                lines.append("")
+                lines.append("")  # real blank line
 
     def emit_img(img_tag: Tag):
         if not isinstance(img_tag, Tag) or img_tag.name != "img":
@@ -251,22 +296,25 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
             else:
                 handle(child)
 
-    # Deduplicate trivial adjacent repeats but KEEP blank lines
-    deduped, prev = [], None
+    # Deduplicate trivial adjacent repeats but KEEP blank lines (collapse runs of blanks)
+    deduped: list[str] = []
     for ln in lines:
         if ln == "":
-            deduped.append(ln)
+            if not deduped or deduped[-1] != "":
+                deduped.append("")
             continue
-        if ln != prev:
+        if not deduped or ln != deduped[-1]:
             deduped.append(ln)
-        prev = ln
     return deduped
 
+# =========================================================
+# REMOVE BEFORE FIRST H1 (robust)
+# =========================================================
 def remove_before_first_h1_all_levels(body: Tag) -> None:
     """
     Remove *all* nodes that appear before the first <h1> in document order.
-    Walk the ancestor chain from <body> down to <h1>; at each level
-    remove previous siblings of the node on the path to the <h1>.
+    Walks the ancestor chain from <body> down to <h1>; at each level
+    removes previous siblings of the node on the path to the <h1>.
     """
     if body is None:
         return
@@ -274,7 +322,6 @@ def remove_before_first_h1_all_levels(body: Tag) -> None:
     if first_h1 is None:
         return
 
-    # Build chain from the direct child of body to the h1
     chain = []
     node = first_h1
     while node is not None and node != body:
@@ -362,7 +409,14 @@ def build_docx(template_bytes: bytes, meta: dict, lines: list[str]) -> bytes:
         "[AGENCY]": meta.get("agency", ""),
         "[CLIENT NAME]": meta.get("client_name", ""),
     })
+    # Main content
     replace_placeholder_with_lines(doc, "[PAGE BODY CONTENT]", lines)
+    # Schema (optional placeholder)
+    try:
+        replace_placeholder_with_lines(doc, "[SCHEMA]", meta.get("schema_lines", []))
+    except ValueError:
+        pass
+
     out = io.BytesIO()
     doc.save(out)
     out.seek(0)
@@ -426,19 +480,18 @@ def process_url(
         except Exception:
             pass
 
-    # robust remove-before-h1
     if remove_before_h1:
         remove_before_first_h1_all_levels(body)
 
-    # extract lines
+    # extract lines + schema
     lines = extract_signposted_lines_from_body(body, annotate_links=annotate_links, include_img_src=include_img_src)
+    schema_lines = extract_schema_jsonld(soup)
 
     # meta
     head = soup.head or soup
     title = head.title.string.strip() if (head and head.title and head.title.string) else "N/A"
     meta_el = head.find("meta", attrs={"name": "description"}) if head else None
     description = meta_el.get("content").strip() if (meta_el and meta_el.get("content")) else "N/A"
-
     page_name = first_h1_text(soup) or fallback_page_name_from_url(final_url)
 
     meta = {
@@ -449,6 +502,7 @@ def process_url(
         "title_len": len(title) if title != "N/A" else 0,
         "description": description,
         "description_len": len(description) if description != "N/A" else 0,
+        "schema_lines": schema_lines,
     }
     return meta, lines
 
@@ -546,7 +600,7 @@ if "batch_zip" not in st.session_state:
 with st.sidebar:
     st.header("Template & Options")
     tpl_file = st.file_uploader("Upload Template as .DOCX file", type=["docx"])
-    st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
+    st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], [SCHEMA], etc.).")
 
     st.divider()
     st.subheader("Need a template?")
@@ -620,8 +674,11 @@ with tab1:
                 st.success("Extracted successfully.")
                 with st.expander("Meta (preview)", expanded=True):
                     st.write(meta)
-                with st.expander("Signposted content (preview)", expanded=True):
+                with st.expander("Signposted content (preview)", expanded=False):
                     st.text("\n".join(lines))
+                with st.expander("Schema (preview)", expanded=False):
+                    schema_preview = "\n".join(meta.get("schema_lines", [])) or "No JSON-LD schema found."
+                    st.text(schema_preview)
 
                 if do_doc:
                     out_bytes = build_docx(tpl_file.read(), meta, lines)
