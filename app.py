@@ -571,19 +571,28 @@ with st.sidebar:
     tpl_file = st.file_uploader("Upload Template as .DOCX file", type=["docx"])
     st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
 
-    st.divider()
-    st.subheader("Need a template?")
-    try:
-        with open("blank_template.docx", "rb") as file:
-            st.download_button(
-                label="Download a Blank Template",
-                data=file,
-                file_name="blank_template.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
-    except FileNotFoundError:
-        st.info("Place a template named 'blank_template.docx' next to app.py to enable this download.")
-    st.caption("Once downloaded, you'll still need to upload this above, but this version is a decent starting point.")
+   st.divider()
+st.subheader("Need a template?")
+
+from pathlib import Path
+APP_DIR = Path(__file__).resolve().parent
+TEMPLATE_CANDIDATES = [
+    APP_DIR / "assets" / "blank_template.docx",
+    APP_DIR / "blank_template.docx",
+]
+
+template_path = next((p for p in TEMPLATE_CANDIDATES if p.exists()), None)
+
+if template_path:
+    with open(template_path, "rb") as file:
+        st.download_button(
+            label="Download a Blank Template",
+            data=file,
+            file_name="blank_template.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+else:
+    st.info("Place your template at assets/blank_template.docx (preferred) or alongside app.py as blank_template.docx to enable this download.")
 
     st.divider()
     st.subheader("Exclude Selectors")
