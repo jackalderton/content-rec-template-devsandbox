@@ -1,5 +1,6 @@
 import re
-from bs4 import BeautifulSoup, Tag, NavigableString, Comment, Doctype, ProcessingInstruction
+from bs4 import BeautifulSoup, FeatureNotFound
+from bs4.element import Tag, NavigableString, Comment, Doctype, ProcessingInstruction
 
 from .fetch import fetch_html
 from .settings import ALWAYS_STRIP, INLINE_TAGS
@@ -18,7 +19,7 @@ def annotate_anchor_text(a: Tag, annotate_links: bool) -> str:
     return f"{text} (→ {href})" if (annotate_links and href) else text
 
 def extract_text_preserve_breaks(node: Tag | NavigableString, annotate_links: bool) -> str:
-    """Extract visible text; convert <br> to \n; handle anchors as one unit."""
+    """Extract visible text; convert <br> to \\n; handle anchors as one unit."""
     if isinstance(node, NavigableString):
         return str(node)
     parts = []
@@ -78,30 +79,28 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
         if name in ALWAYS_STRIP:
             return
 
-        # Headings: emit once and STOP (avoid duplicate <p> from child text nodes)
+        # Headings
         if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             txt = extract_text_preserve_breaks(tag, annotate_links)
             if txt.strip():
                 emit_lines(name, txt)
             return
 
-        # Paragraphs: flatten descendants to a single string, emit once and STOP
+        # Paragraphs
         if name == "p":
             txt = tag.get_text(" ", strip=True)
             if txt.strip():
                 emit_lines("p", txt)
-            # Also surface any images inside the paragraph
             for img in tag.find_all("img"):
                 emit_img(img)
             return
 
-        # Lists: flatten items to <p>, then STOP (handle one nested level)
+        # Lists
         if name in {"ul", "ol"}:
             for li in tag.find_all("li", recursive=False):
                 txt = extract_text_preserve_breaks(li, annotate_links)
                 if txt.strip():
                     emit_lines("p", txt)
-                # Emit any images inside the list item
                 for img in li.find_all("img"):
                     emit_img(img)
                 for sub in li.find_all(["ul", "ol"], recursive=False):
@@ -113,8 +112,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                             emit_img(img)
             return
 
-        # Generic containers: group contiguous inline content into a single <p>,
-        # and recurse into block-level children so sentences don't split around inline tags
+        # Generic containers
         buf = []
         def flush_buf():
             if not buf:
@@ -133,7 +131,6 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                 if child.name == "br":
                     buf.append("\n")
                 elif child.name == "img":
-                    # Flush text seen so far, then emit the image alt/src
                     flush_buf()
                     emit_img(child)
                 elif child.name in INLINE_TAGS:
@@ -172,13 +169,16 @@ def first_h1_text(soup: BeautifulSoup) -> str | None:
         return None
     txt = extract_text_preserve_breaks(h1, annotate_links=False)
     txt = normalise_keep_newlines(txt)
-    # collapse to single line to avoid unsafe filenames
     txt = re.sub(r"\s+", " ", txt)
     return txt.strip() or None
 
 def process_url(url: str, opts: ExtractOptions):
     final_url, html_bytes = fetch_html(url)
-    soup = BeautifulSoup(html_bytes, "lxml")
+    # Prefer lxml but gracefully fall back if unavailable
+    try:
+        soup = BeautifulSoup(html_bytes, "lxml")
+    except FeatureNotFound:
+        soup = BeautifulSoup(html_bytes, "html.parser")
 
     # global strip (script/style/noscript/template)
     for el in soup.find_all(list(ALWAYS_STRIP)):
@@ -219,7 +219,6 @@ def process_url(url: str, opts: ExtractOptions):
     if opts.remove_before_h1 and body.name == "body":
         first_h1 = body.find("h1")
         if first_h1 is not None:
-            # Find the top-level <body> child that contains this <h1>
             top = first_h1
             while top is not None and top.parent is not None and top.parent != body:
                 top = top.parent
