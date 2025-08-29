@@ -572,15 +572,13 @@ with st.sidebar:
     st.caption("This should be your blank template with placeholders (e.g., [PAGE], [DATE], [PAGE BODY CONTENT], etc.).")
 
 st.divider()
-    st.subheader("Need a template?")
+st.subheader("Need a template?")
 
-    from pathlib import Path
-    APP_DIR = Path(__file__).resolve().parent
-    TEMPLATE_CANDIDATES = [
-        APP_DIR / "assets" / "blank_template.docx",
-        APP_DIR / "blank_template.docx",
+APP_DIR = Path(__file__).resolve().parent
+TEMPLATE_CANDIDATES = [
+    APP_DIR / "assets" / "blank_template.docx",
+    APP_DIR / "blank_template.docx",
 ]
-
 template_path = next((p for p in TEMPLATE_CANDIDATES if p.exists()), None)
 
 if template_path:
@@ -592,9 +590,13 @@ if template_path:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
 else:
-    st.info("Place your template at assets/blank_template.docx (preferred) or alongside app.py as blank_template.docx to enable this download.")
+    st.info(
+        "Place your template at assets/blank_template.docx (preferred) "
+        "or alongside app.py as blank_template.docx to enable this download."
+    )
 
-    st.divider()
+st.caption("Once downloaded, you'll still need to upload this above, but this version is a decent starting point.")
+st.divider()
     st.subheader("Exclude Selectors")
     exclude_txt = st.text_area(
         "Comma-separated CSS selectors to remove from <body>",
