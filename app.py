@@ -141,19 +141,11 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
       - <h1> … <h6> lines
       - <p> lines
       - <img alt="…"> (or <img alt="…" src="…"> when enabled) for every <img> encountered
-
-    Also:
-      - Inserts a blank line *before* each <h2>–<h6> to improve visual structure.
-      - Preserves blank lines (as empty strings), not "<p>".
+    Blank lines are preserved as empty strings (no '<p>' inserted).
     """
     lines: list[str] = []
 
     def emit_lines(tag_name: str, text: str):
-        # If this is a sub-heading (h2–h6), add a single blank line before it (unless we're at the top or already blank)
-        if tag_name in {"h2", "h3", "h4", "h5", "h6"}:
-            if not lines or lines[-1] != "":
-                lines.append("")
-
         text = normalise_keep_newlines(text)
         segments = text.split("\n")
         for seg in segments:
@@ -163,7 +155,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                     continue
                 lines.append(f"<{tag_name}> {seg_stripped}")
             else:
-                # real blank line (no <p>)
+                # preserve a blank line WITHOUT adding a <p>
                 lines.append("")
 
     def emit_img(img_tag: Tag):
@@ -243,7 +235,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
                     handle(child)
         flush_buf()
 
-    # Walk body
+    # Walk the body
     for child in body.children:
         if isinstance(child, (Comment, Doctype, ProcessingInstruction)):
             continue
@@ -263,14 +255,12 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
     deduped, prev = [], None
     for ln in lines:
         if ln == "":
-            if not deduped or deduped[-1] != "":
-                deduped.append("")  # collapse multiple blanks to one
+            deduped.append(ln)
             continue
         if ln != prev:
             deduped.append(ln)
         prev = ln
     return deduped
-
 
 def remove_before_first_h1_all_levels(body: Tag) -> None:
     """
