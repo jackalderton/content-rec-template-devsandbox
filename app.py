@@ -59,6 +59,27 @@ NOISE_SUBSTRINGS = (
 # UTILITIES
 # -------------------------
 
+from pathlib import Path
+import streamlit as st
+
+# ---- Page config MUST be the first Streamlit call ----
+APP_DIR = Path(__file__).resolve().parent
+ICON_CANDIDATES = [
+    APP_DIR / "assets" / "JAFavicon.png",
+    APP_DIR / "JAFavicon.png",
+]
+
+icon_path = next((p for p in ICON_CANDIDATES if p.exists()), None)
+
+st.set_page_config(
+    page_title="Content Rec Template Tool",
+    page_icon=str(icon_path) if icon_path else "🧩",
+    layout="wide",
+)
+
+if not icon_path:
+    st.sidebar.warning("Favicon not found (looked in assets/JAFavicon.png and JAFavicon.png).")
+
 def uk_today_str() -> str:
     return datetime.now(ZoneInfo(DATE_TZ)).strftime(DATE_FMT)
 
