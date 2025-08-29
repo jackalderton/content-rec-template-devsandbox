@@ -31,7 +31,7 @@ st.set_page_config(
 # =========================================================
 # CONSTANTS / SETTINGS
 # =========================================================
-ALWAYS_STRIP = {"script", "style", "noscript", "template"}
+ALWAYS_STRIP = {"style", "noscript", "template"}  # NOTE: don't include "script" here; we strip after schema extraction
 INLINE_TAGS = {"a","span","strong","em","b","i","u","s","small","sup","sub","mark","abbr","time","code","var","kbd"}
 DEFAULT_EXCLUDE = [
     "header", "footer", "nav",
@@ -44,10 +44,12 @@ DEFAULT_EXCLUDE = [
     "[class*='feefo']",
     "[class*='associated-blogs']",
     "[class*='popular']",
+    # Explore/SPA results containers and variants
     ".sr-main.js-searchpage-content.visible",
     "[class~='sr-main'][class~='js-searchpage-content'][class~='visible']",
     "[class*='js-searchpage-content']",
     "[class*='searchpage-content']",
+    # Map modal container to exclude
     ".lmd-map-modal-create.js-lmd-map-modal-map",
 ]
 DATE_TZ = "Europe/London"
@@ -136,9 +138,9 @@ def extract_text_preserve_breaks(node: Tag | NavigableString, annotate_links: bo
 # =========================================================
 def extract_schema_jsonld(soup: BeautifulSoup) -> list[str]:
     """
-    Collects all <script type="application/ld+json"> (any casing, supports variations like 'application/ld+json; charset=utf-8').
+    Collects all <script type="application/ld+json"> blocks (any casing/variants).
     Pretty-prints valid JSON; falls back to raw if parsing fails.
-    Returns a flat list of lines (for replace_placeholder_with_lines).
+    Returns a flat list of lines suitable for replace_placeholder_with_lines.
     """
     blocks: list[str] = []
 
@@ -146,15 +148,12 @@ def extract_schema_jsonld(soup: BeautifulSoup) -> list[str]:
         if not isinstance(tag, Tag) or tag.name != "script":
             return False
         t = (tag.get("type") or "").lower()
-        return "ld+json" in t  # catches 'application/ld+json' and variants
+        return "ld+json" in t  # matches 'application/ld+json', '...; charset=utf-8', etc.
 
     for sc in soup.find_all(is_ldjson):
-        # Prefer .string; fall back to get_text() to catch cases with comments/whitespace
         raw = (sc.string or sc.get_text() or "").strip()
         if not raw:
             continue
-        # Some sites wrap multiple JSON-LD objects back-to-back or in arrays
-        # Try strict parse; if fails, keep raw
         try:
             parsed = json.loads(raw)
             pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
@@ -162,11 +161,10 @@ def extract_schema_jsonld(soup: BeautifulSoup) -> list[str]:
         except Exception:
             blocks.append(raw)
 
-    # Flatten with blank line separators
     lines: list[str] = []
     for i, block in enumerate(blocks):
         if i > 0:
-            lines.append("")  # spacer between blocks
+            lines.append("")  # blank line between blocks
         lines.extend(block.splitlines())
     return lines
 
@@ -216,7 +214,7 @@ def extract_signposted_lines_from_body(body: Tag, annotate_links: bool, include_
 
     def handle(tag: Tag):
         name = tag.name
-        if name in ALWAYS_STRIP:
+        if name in {"script", *ALWAYS_STRIP}:
             return
 
         # Headings
@@ -409,14 +407,12 @@ def build_docx(template_bytes: bytes, meta: dict, lines: list[str]) -> bytes:
         "[AGENCY]": meta.get("agency", ""),
         "[CLIENT NAME]": meta.get("client_name", ""),
     })
-    # Main content
     replace_placeholder_with_lines(doc, "[PAGE BODY CONTENT]", lines)
-    # Schema (optional placeholder)
+    # Insert schema if placeholder exists
     try:
         replace_placeholder_with_lines(doc, "[SCHEMA]", meta.get("schema_lines", []))
     except ValueError:
         pass
-
     out = io.BytesIO()
     doc.save(out)
     out.seek(0)
@@ -446,7 +442,10 @@ def process_url(
     final_url, html_bytes = fetch_html(url)
     soup = BeautifulSoup(html_bytes, "lxml")
 
-    # global strip
+    # --- extract schema BEFORE removing <script> tags ---
+    schema_lines = extract_schema_jsonld(soup)
+
+    # global strip for body processing (do NOT include 'script' here)
     for el in soup.find_all(list(ALWAYS_STRIP)):
         el.decompose()
 
@@ -480,12 +479,12 @@ def process_url(
         except Exception:
             pass
 
+    # robust remove-before-h1
     if remove_before_h1:
         remove_before_first_h1_all_levels(body)
 
-    # extract lines + schema
+    # extract signposted lines
     lines = extract_signposted_lines_from_body(body, annotate_links=annotate_links, include_img_src=include_img_src)
-    schema_lines = extract_schema_jsonld(soup)
 
     # meta
     head = soup.head or soup
